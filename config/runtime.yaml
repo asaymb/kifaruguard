@@ -1,0 +1,15 @@
+agents:
+  mine: true
+  bank: true
+guardrails:
+  block_on_status:
+    - BLOCKED
+llm:
+  local:
+    url: http://ollama:11434/api/generate
+    model: tinyllama
+    timeout_seconds: 5
+    retries: 2
+  openai:
+    model: gpt-4o-mini
+    timeout_seconds: 5

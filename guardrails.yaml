@@ -1,0 +1,4 @@
+rules:
+  - name: blocked-status-guard
+    condition: status == "BLOCKED"
+    action: BLOCK

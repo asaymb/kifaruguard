@@ -1,0 +1,74 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-kifaru_guard}
+      POSTGRES_USER: ${POSTGRES_USER:-kifaru}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kifaru123}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kifaru} -d ${POSTGRES_DB:-kifaru_guard}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  ollama:
+    image: ollama/ollama:latest
+    command: >
+      sh -c "ollama serve & sleep 5 && ollama pull tinyllama && wait"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-kifaru}:${POSTGRES_PASSWORD:-kifaru123}@postgres:5432/${POSTGRES_DB:-kifaru_guard}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      RUNTIME_CONFIG_PATH: /app/config/runtime.yaml
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,urllib.request; p=os.environ.get('PORT','8000'); urllib.request.urlopen('http://127.0.0.1:'+p+'/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      BACKEND_HOST: backend
+      BACKEND_PORT: "8000"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
+  ollama_data:
