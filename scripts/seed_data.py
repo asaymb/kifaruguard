@@ -4,6 +4,7 @@ from backend.app.core.security import hash_password
 from backend.app.db.models import Base, User
 from backend.app.db.session import SessionLocal, engine
 
+
 def seed_csv(path: str, headers: list[str], rows: list[list[str]]):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if os.path.exists(path):
@@ -13,14 +14,22 @@ def seed_csv(path: str, headers: list[str], rows: list[list[str]]):
         writer.writerow(headers)
         writer.writerows(rows)
 
+
 def main():
     Base.metadata.create_all(bind=engine)
     seed_csv('/app/data/sanctions_mines.csv', ['country'], [['north korea'], ['iran']])
     seed_csv('/app/data/sanctions_politiques.csv', ['company_name'], [['acme holdings'], ['red flag corp']])
     os.makedirs('/app/config', exist_ok=True)
+    # Writable root for optional AGENT_ALLOW_FILE_PATH (basename-only files; see agents API).
+    os.makedirs('/app/data/uploads', exist_ok=True)
     db = SessionLocal()
     try:
-        if not db.query(User).filter(User.username == 'admin').first():
+        # In production, do not create a known weak default admin unless explicitly opted in.
+        is_prod = os.getenv("ENVIRONMENT", "").strip().lower() == "production"
+        allow_weak_seed = os.getenv("ALLOW_ADMIN_SEED", "").strip().lower() in ("1", "true", "yes")
+        if is_prod and not allow_weak_seed:
+            pass
+        elif not db.query(User).filter(User.username == 'admin').first():
             db.add(User(username='admin', hashed_password=hash_password('admin123')))
             db.commit()
     finally:

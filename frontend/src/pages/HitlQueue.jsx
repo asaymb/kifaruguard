@@ -26,7 +26,7 @@ export default function HitlQueue({ token }) {
   }, [token, page, pageSize, status])
 
   useEffect(() => {
-    const ws = connectHitlSocket(() => {
+    const ws = connectHitlSocket(token, () => {
       refresh().catch(() => {})
     })
     return () => ws.close()

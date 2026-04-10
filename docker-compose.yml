@@ -24,7 +24,7 @@ services:
     command: >
       sh -c "ollama serve &
       sleep 5 &&
-      ollama pull mistral &&
+      ollama pull tinyllama &&
       wait"
     healthcheck:
       test: ["CMD", "ollama", "list"]
@@ -40,10 +40,16 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: postgresql+psycopg2://kifaru:kifaru123@postgres:5432/kifaru_guard
-      JWT_SECRET_KEY: super-secret-key
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-jwt-secret-change-for-any-real-use}
+      AUDIT_HMAC_SECRET: ${AUDIT_HMAC_SECRET:-dev-only-audit-hmac-change-for-real-use}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      ALLOW_ADMIN_SEED: ${ALLOW_ADMIN_SEED:-1}
       OLLAMA_URL: http://ollama:11434
-      OLLAMA_MODEL: mistral
+      OLLAMA_MODEL: tinyllama
       RUNTIME_CONFIG_PATH: /app/config/runtime.yaml
+      AGENT_FILE_ROOT: /app/data/uploads
+      AGENT_ALLOW_FILE_PATH: "1"
     volumes:
       - ./:/app
       - ./data:/app/data

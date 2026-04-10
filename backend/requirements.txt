@@ -9,5 +9,6 @@ requests
 python-jose
 passlib[bcrypt]
 PyYAML
+reportlab
 pytest
 httpx

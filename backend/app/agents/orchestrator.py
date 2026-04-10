@@ -15,6 +15,8 @@ def run_state_machine(agent_type: str, text: str, sanctions_mines_csv: str, sanc
     logger(agent_type, "CHECK_RULES", result["status"], str(guard), "ok")
     if not guard["allowed"]:
         result["status"] = "BLOCKED"
+    elif guard.get("action") == "REVIEW":
+        result["status"] = "REVIEW"
     logger(agent_type, "DECISION", str(guard), str(result), "ok")
     logger(agent_type, "END", str(result), "done", "ok")
     runtime_logger.info("Agent run finished: %s -> %s", agent_type, result.get("status"))

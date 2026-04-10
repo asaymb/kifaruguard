@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { authedFetch } from '../api'
 
 export default function Dashboard({ stats, token }) {
@@ -9,7 +10,17 @@ export default function Dashboard({ stats, token }) {
     authedFetch('/config/runtime', token)
       .then((cfg) => {
         setAgents(cfg?.agents || { mine: true, bank: true })
-        setBlockStatuses((cfg?.guardrails?.block_on_status || ["BLOCKED"]).join(","))
+      })
+      .catch(() => {})
+  }, [token])
+
+  useEffect(() => {
+    authedFetch('/config/guardrails', token)
+      .then((d) => {
+        const fromRules = (d.rules || [])
+          .filter((r) => r.enabled && r.action === 'BLOCK')
+          .map((r) => r.condition)
+        setBlockStatuses((fromRules.length ? fromRules : d.block_on_status || ['BLOCKED']).join(','))
       })
       .catch(() => {})
   }, [token])
@@ -70,10 +81,17 @@ export default function Dashboard({ stats, token }) {
       </div>
 
       <div className="bg-white dark:bg-slate-800 p-4 rounded border dark:border-slate-700">
-        <h3 className="font-semibold mb-3">Guardrails</h3>
-        <div className="flex gap-2">
+        <h3 className="font-semibold mb-3">Guardrails (quick)</h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+          Comma-separated statuses to <strong>block</strong>. For REVIEW actions and messages, use{' '}
+          <Link to="/policies" className="text-green-700 dark:text-green-400 underline">
+            Policies
+          </Link>
+          .
+        </p>
+        <div className="flex flex-wrap gap-2">
           <input
-            className="border rounded p-2 dark:bg-slate-700"
+            className="border rounded p-2 dark:bg-slate-700 flex-1 min-w-[200px]"
             value={blockStatuses}
             onChange={(e) => setBlockStatuses(e.target.value)}
             placeholder="BLOCKED,REVIEW"

@@ -19,12 +19,24 @@ def _call_local(prompt: str, llm_cfg: dict) -> str | None:
     timeout = int(local.get("timeout_seconds", 5))
     retries = max(1, int(local.get("retries", 2)))
 
-    logger.info("Using local LLM")
+    logger.info("Using local LLM model=%s", model)
     for _ in range(retries):
         try:
             response = requests.post(url, json={"model": model, "prompt": prompt, "stream": False}, timeout=timeout)
+            if response.status_code == 404:
+                logger.error(
+                    "Local LLM model %r not found at %s — pull it in the Ollama container, e.g. ollama pull %s",
+                    model,
+                    url,
+                    model,
+                )
+                return None
             response.raise_for_status()
-            text = (response.json() or {}).get("response", "")
+            body = response.json() or {}
+            if body.get("error"):
+                logger.error("Ollama error for model %r: %s", model, body.get("error"))
+                return None
+            text = body.get("response", "")
             if _is_valid_response(text):
                 return text.strip()
         except Exception:

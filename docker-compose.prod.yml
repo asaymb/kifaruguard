@@ -32,8 +32,13 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-kifaru}:${POSTGRES_PASSWORD:-kifaru123}@postgres:5432/${POSTGRES_DB:-kifaru_guard}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      AUDIT_HMAC_SECRET: ${AUDIT_HMAC_SECRET}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      ENVIRONMENT: production
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       RUNTIME_CONFIG_PATH: /app/config/runtime.yaml
+      AGENT_FILE_ROOT: /app/data/uploads
+      AGENT_ALLOW_FILE_PATH: "1"
     depends_on:
       postgres:
         condition: service_healthy

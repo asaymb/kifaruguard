@@ -5,6 +5,9 @@ import Dashboard from './pages/Dashboard'
 import RunAgent from './pages/RunAgent'
 import AuditLogs from './pages/AuditLogs'
 import HitlQueue from './pages/HitlQueue'
+import Policies from './pages/Policies'
+import CaseView from './pages/CaseView'
+import Inbox from './pages/Inbox'
 
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '')
@@ -51,8 +54,10 @@ export default function App() {
       <nav className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 p-4 flex gap-4 items-center">
         <Link to="/">Dashboard</Link>
         <Link to="/run">Run Agent</Link>
+        <Link to="/inbox">Inbox</Link>
         <Link to="/audit">Audit Logs</Link>
         <Link to="/hitl">HITL Queue</Link>
+        <Link to="/policies">Policies</Link>
         <button className="ml-auto px-3 py-1 bg-green-600 text-white rounded" onClick={() => setDark((d) => !d)}>
           {dark ? 'Light' : 'Dark'}
         </button>
@@ -61,8 +66,11 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Dashboard stats={stats} token={token} />} />
           <Route path="/run" element={<RunAgent token={token} />} />
+          <Route path="/inbox" element={<Inbox token={token} />} />
           <Route path="/audit" element={<AuditLogs token={token} />} />
           <Route path="/hitl" element={<HitlQueue token={token} />} />
+          <Route path="/policies" element={<Policies token={token} />} />
+          <Route path="/cases/:runId" element={<CaseView token={token} />} />
         </Routes>
       </main>
     </div>

@@ -4,6 +4,11 @@ agents:
 guardrails:
   block_on_status:
     - BLOCKED
+  rules:
+    - enabled: true
+      condition: BLOCKED
+      action: BLOCK
+      message: This outcome is blocked by policy.
 llm:
   local:
     url: http://ollama:11434/api/generate

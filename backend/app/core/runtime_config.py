@@ -7,7 +7,17 @@ RUNTIME_CONFIG_PATH = os.getenv("RUNTIME_CONFIG_PATH", "/app/config/runtime.yaml
 
 DEFAULT_CONFIG = {
     "agents": {"mine": True, "bank": True},
-    "guardrails": {"block_on_status": ["BLOCKED"]},
+    "guardrails": {
+        "block_on_status": ["BLOCKED"],
+        "rules": [
+            {
+                "enabled": True,
+                "condition": "BLOCKED",
+                "action": "BLOCK",
+                "message": "This outcome is blocked by policy.",
+            },
+        ],
+    },
     "llm": {
         "local": {
             "url": "http://ollama:11434/api/generate",
@@ -58,3 +68,19 @@ def get_block_statuses() -> set[str]:
     if not isinstance(statuses, list):
         return {"BLOCKED"}
     return {str(s).upper() for s in statuses}
+
+
+def derive_block_on_status_from_rules(rules: list[Any]) -> list[str]:
+    """Statuses that trigger a BLOCK action (kept in sync for audit PDF / legacy readers)."""
+    seen: list[str] = []
+    for r in rules:
+        if not isinstance(r, dict):
+            continue
+        if not r.get("enabled", True):
+            continue
+        if str(r.get("action", "")).upper() != "BLOCK":
+            continue
+        c = str(r.get("condition", "")).strip().upper()
+        if c and c not in seen:
+            seen.append(c)
+    return seen

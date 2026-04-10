@@ -1,12 +1,13 @@
 import json
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from backend.app.api.deps import get_current_user
 from backend.app.core.ws import hitl_ws_manager
-from backend.app.db.models import HitlQueue
+from backend.app.db.models import HitlQueue, User
 from backend.app.db.session import get_db
 
 router = APIRouter(tags=["hitl"])
@@ -44,6 +45,10 @@ def get_hitl(
                     "reason": r.reason,
                     "status": r.status,
                     "timestamp": r.timestamp,
+                    "run_id": r.run_id,
+                    "agent_result_status": r.agent_result_status,
+                    "reviewed_by": r.reviewed_by,
+                    "reviewed_at": r.reviewed_at,
                 }
                 for r in rows
             ],
@@ -60,14 +65,18 @@ def get_hitl(
 
 
 @router.post("/hitl/{item_id}/approve")
-async def approve(item_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
+async def approve(item_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     try:
         row = db.query(HitlQueue).filter(HitlQueue.id == item_id).first()
         if not row:
             raise HTTPException(status_code=404, detail="Item not found")
         row.status = "approved"
+        row.reviewed_by = user.username
+        row.reviewed_at = datetime.utcnow()
         db.add(row)
-        await hitl_ws_manager.broadcast(json.dumps({"event": "hitl_updated", "id": row.id, "status": row.status}))
+        await hitl_ws_manager.broadcast(
+            json.dumps({"event": "hitl_updated", "id": row.id, "status": row.status, "run_id": row.run_id})
+        )
         return {"ok": True}
     except HTTPException:
         raise
@@ -80,14 +89,18 @@ async def approve(item_id: int, db: Session = Depends(get_db), _=Depends(get_cur
 
 
 @router.post("/hitl/{item_id}/reject")
-async def reject(item_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
+async def reject(item_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     try:
         row = db.query(HitlQueue).filter(HitlQueue.id == item_id).first()
         if not row:
             raise HTTPException(status_code=404, detail="Item not found")
         row.status = "rejected"
+        row.reviewed_by = user.username
+        row.reviewed_at = datetime.utcnow()
         db.add(row)
-        await hitl_ws_manager.broadcast(json.dumps({"event": "hitl_updated", "id": row.id, "status": row.status}))
+        await hitl_ws_manager.broadcast(
+            json.dumps({"event": "hitl_updated", "id": row.id, "status": row.status, "run_id": row.run_id})
+        )
         return {"ok": True}
     except HTTPException:
         raise
