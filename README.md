@@ -1,63 +1,130 @@
 # Kifaru Guard
 
-Kifaru Guard is a local-first compliance workflow:
+Plateforme de **gouvernance d’agents** avec audit, garde-fous et file d’attente **HITL** (humain dans la boucle), orientée conformité.
 
-1. Upload PDF
-2. Run Mine or Bank agent
-3. Apply guardrails
-4. Write audit trail
-5. Send REVIEW cases to HITL queue
+En quelques minutes vous pouvez :
 
-## Stack
+1. Lancer la stack locale avec **Docker** (Postgres + Ollama + API + frontend).
+2. Déployer l’API sur **Railway** sans modifier le code (variables d’environnement uniquement).
 
-- Backend: FastAPI + SQLAlchemy + PostgreSQL
-- Frontend: React + Vite + Tailwind
-- LLM routing: Ollama (tinyllama) -> OpenAI (gpt-4o-mini) -> mock fallback
+---
 
-## Environment Variables
+## Architecture
 
-Copy `.env.example` to `.env` locally (never commit `.env`):
+| Composant | Rôle |
+|-----------|------|
+| **Backend** | FastAPI, SQLAlchemy, PostgreSQL |
+| **Frontend** | React, Vite, Tailwind, Nginx (proxy API) |
+| **LLM** | Voir section *Comportement LLM* ci-dessous |
 
-- `POSTGRES_DB`
-- `POSTGRES_USER`
-- `POSTGRES_PASSWORD`
-- `JWT_SECRET_KEY`
-- `AUDIT_HMAC_SECRET` (signatures des lignes d’audit)
-- `OPENAI_API_KEY` (optionnel, repli LLM)
-- `RUNTIME_CONFIG_PATH`
-- `PORT` (backend, ex. `8000` ; Railway injecte souvent `PORT` automatiquement)
+---
 
-## Run (dev)
+## Comportement LLM (environnement)
+
+La configuration est centralisée dans `backend/app/core/config.py` et `backend/app/core/llm_service.py`.
+
+| `ENVIRONMENT` | Ollama (par défaut) | Ordre d’appel |
+|---------------|---------------------|----------------|
+| `development` | Activé | Ollama → OpenAI (si clé) → réponse de repli sûre |
+| `production`  | Désactivé | OpenAI (si clé) → réponse de repli sûre |
+
+Surcharge explicite : **`OLLAMA_ENABLED=1`** ou **`0`** (prioritaire sur la dérivation ci-dessus).
+
+Sur **Railway**, définissez `ENVIRONMENT=production` et **`OPENAI_API_KEY`** pour un LLM externe ; sans clé, l’API renvoie un message de repli contrôlé (pas d’appel Ollama).
+
+---
+
+## Démarrage local (Docker)
+
+### Prérequis
+
+- Docker + Docker Compose v2
+
+### Commande unique (développement avec Ollama)
 
 ```bash
 docker compose up --build
 ```
 
-## Run (light prod / Railway-like)
+- **Frontend** : http://localhost:8080  
+- **API** : http://localhost:8000  
+- **Santé API** : `GET http://localhost:8000/health`
+
+Les services **postgres** et **ollama** ont des *healthchecks* ; le **backend** attend Postgres (script `scripts/wait_for_db.py`) et ne démarre qu’après base joignable. Le **frontend** attend un backend sain.
+
+### Profil « proche production » (sans Ollama)
+
+Même logique que Railway côté LLM : pas d’Ollama, OpenAI ou repli.
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env up --build -d
+copy .env.example .env   # Windows — éditer JWT_SECRET_KEY, AUDIT_HMAC_SECRET, ALLOWED_ORIGINS
+docker compose -f docker-compose.prod.yml --env-file .env up --build
 ```
 
-## Health Checks
+---
 
-- Backend: `GET /health`
-- Ollama container: `ollama list`
-- Frontend (Nginx): `GET /` on exposed frontend port
+## Variables d’environnement
+
+Le fichier **`.env.example`** à la racine décrit toutes les variables. Résumé :
+
+| Variable | Obligatoire | Description |
+|----------|-------------|-------------|
+| `DATABASE_URL` | Oui en **production** | URL SQLAlchemy + psycopg2 |
+| `JWT_SECRET_KEY` | Oui | Signature JWT |
+| `AUDIT_HMAC_SECRET` | Oui | Intégrité des lignes d’audit |
+| `ENVIRONMENT` | Recommandé | `development` ou `production` |
+| `ALLOWED_ORIGINS` | Recommandé | Origines CORS (séparées par `,`) |
+| `OPENAI_API_KEY` | Recommandé en prod | LLM cloud si Ollama désactivé |
+| `OLLAMA_ENABLED` | Non | Forcer Ollama on/off |
+| `RUNTIME_CONFIG_PATH` | Non | Défaut `/app/config/runtime.yaml` |
+| `PORT` | Non | Port d’écoute (Railway injecte souvent `PORT`) |
+
+**Frontend (build)** : `VITE_API_BASE_URL` — laisser **vide** en Docker pour utiliser le proxy Nginx (même origine). Voir `frontend/.env.example`.
+
+---
+
+## Déploiement Railway
+
+1. **Backend** : même dépôt, **Root directory** = racine du repo, Dockerfile **`Dockerfile.backend`** (voir `railway.json`).
+2. Variables minimales : `DATABASE_URL` (format `postgresql+psycopg2://...`), `JWT_SECRET_KEY`, `AUDIT_HMAC_SECRET`, `ENVIRONMENT=production`, `ALLOWED_ORIGINS`, `OPENAI_API_KEY` (fortement recommandé).
+3. **Démarrage** : l’image exécute `wait_for_db`, `seed_data`, puis  
+   `uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000}`  
+   (le module d’application est **`backend.app.main`**, pas `app.main` à la racine).
+4. **Frontend** : service séparé, `frontend/Dockerfile`, variables `BACKEND_HOST` / `BACKEND_PORT` (réseau privé Railway).
+
+Détails complémentaires : [docs/RAILWAY_GITHUB.md](docs/RAILWAY_GITHUB.md).
+
+---
+
+## Structure utile du dépôt
+
+```
+backend/app/core/config.py      # Configuration centralisée
+backend/app/core/llm_service.py # Fournisseurs Ollama / OpenAI / repli
+config/runtime.yaml             # Agents, garde-fous, paramètres LLM YAML
+docker-compose.yml              # Dev local + Ollama
+docker-compose.prod.yml         # Stack sans Ollama
+Dockerfile.backend              # Image API (Railway / build explicite)
+scripts/wait_for_db.py          # Attente Postgres au démarrage
+```
+
+---
 
 ## Tests
 
-Backend (pytest):
+**Backend** (dans le conteneur ou venv avec dépendances) :
 
 ```bash
 docker compose exec backend pytest -q
 ```
 
-Frontend (Jest):
+**Frontend** :
 
 ```bash
-cd frontend && npm install && npm test
+cd frontend && npm ci && npm test
 ```
+
+---
 
 ## Smoke test
 
@@ -65,65 +132,28 @@ cd frontend && npm install && npm test
 python scripts/smoke_test.py
 ```
 
-It verifies:
+---
 
-- auth login
-- mine + bank run
-- audit retrieval
-- HITL retrieval
+## Journalisation au démarrage (API)
 
-## Runtime configuration
+Au démarrage réussi, les logs incluent notamment :
 
-Runtime config file: `config/runtime.yaml`
+- `environment` (valeur de `ENVIRONMENT`)
+- `database=connected`
+- `llm=...` et `ollama_enabled=true|false`
 
-- Enable/disable agents
-- Block status list for guardrails
-- LLM routing parameters (models/timeouts/retries)
+---
 
-UI controls are available in Dashboard (Agent Controls + Guardrails).
+## Parcours utilisateur (démo)
 
-## Railway deployment notes
+1. Ouvrir http://localhost:8080  
+2. Se connecter (admin démo en développement si `ALLOW_ADMIN_SEED=1`)  
+3. **Run Agent** — PDF  
+4. **Audit logs** / **Case** / **HITL** selon le résultat  
 
-- Backend runs on `${PORT}` (fallback `8000`).
-- Frontend runs on Nginx with `${PORT}` (default `8080`).
-- **GitHub**: push your branch; Railway builds from the connected repo.
-- **Frontend → backend**: set `BACKEND_HOST` and `BACKEND_PORT` on the frontend service (private hostname of the API on Railway). See [docs/RAILWAY_GITHUB.md](docs/RAILWAY_GITHUB.md).
-- Set secrets in Railway:
-  - `JWT_SECRET_KEY`
-  - `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
-  - `OPENAI_API_KEY` (optional)
-  - `AUDIT_HMAC_SECRET` (recommended)
-- Runtime config file is mounted at `config/runtime.yaml`.
-- API and WebSocket traffic can be routed via frontend Nginx (`/auth`, `/agents`, `/audit`, `/hitl`, `/config`, `/health`, `/ws/*`).
+---
 
-## API routes
+## Fichiers de référence
 
-- `POST /auth/login`
-- `POST /agents/run`
-- `GET /audit` (pagination + filters)
-- `GET /hitl` (pagination + filters)
-- `POST /hitl/{id}/approve`
-- `POST /hitl/{id}/reject`
-- `GET /config/runtime`
-- `POST /config/agents`
-- `POST /config/guardrails`
-- `WS /ws/hitl`
-
-## Production files
-
-- `backend/Dockerfile` (multi-stage, `${PORT}` aware)
-- `frontend/Dockerfile` (build + Nginx runtime)
-- `frontend/nginx.conf` (SPA + API/WS proxy)
-- `docker-compose.prod.yml` (Railway-like setup)
-- `RELEASE_CHECKLIST.md` (go-live checklist)
-
-## Non-technical guide: test one full agent flow
-
-1. Open app on `http://localhost:8080`
-2. Click **Login as admin**
-3. Go to **Run Agent**
-4. Select `mine` and upload a PDF
-5. Click **Run**
-6. Open **Audit Logs** and confirm step-by-step trace
-7. For bank sanctions matches, open **HITL Queue** and approve/reject
-8. Return to **Dashboard** to see monitoring counters
+- [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) — checklist mise en production  
+- [docs/RAILWAY_GITHUB.md](docs/RAILWAY_GITHUB.md) — Railway pas à pas  

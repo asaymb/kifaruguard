@@ -11,7 +11,10 @@ from backend.app.api import agents, audit, auth, cases, hitl, inbox, config as r
 from backend.app.core.config import (
     AUDIT_HMAC_SECRET,
     JWT_SECRET_KEY,
+    describe_llm_mode,
     get_cors_origins_and_credentials,
+    get_settings,
+    health_llm_tier,
 )
 from backend.app.core.security import decode_token
 from backend.app.core.ws import hitl_ws_manager
@@ -81,7 +84,19 @@ def startup():
                 conn.execute(text("SELECT 1"))
             Base.metadata.create_all(bind=engine)
             _patch_schema_columns()
-            logger.info("service_startup db_ready=true attempt=%s", attempt)
+            st = get_settings()
+            logger.info(
+                "kifaru_startup environment=%s database=connected llm=%s ollama_enabled=%s",
+                st.environment,
+                describe_llm_mode(),
+                st.ollama_enabled,
+            )
+            logger.info(
+                "Kifaru Guard ready — environment=%s ; database=connected ; primary LLM=%s (%s).",
+                st.environment,
+                health_llm_tier(),
+                describe_llm_mode(),
+            )
             return
         except RuntimeError:
             raise
@@ -95,15 +110,45 @@ def startup():
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
+    detail = exc.detail if isinstance(exc.detail, str) else "Request failed"
+    log_line = json.dumps(
+        {
+            "event": "http_error",
+            "path": str(request.url.path),
+            "status_code": exc.status_code,
+            "detail": detail[:500],
+        },
+        ensure_ascii=False,
+    )
+    if exc.status_code >= 500:
+        logger.error(log_line)
+    elif exc.status_code in (401, 403, 404):
+        logger.warning(log_line)
+    else:
+        logger.info(log_line)
     if isinstance(exc.detail, str):
-        return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
-    return JSONResponse(status_code=exc.status_code, content={"error": "Request failed"})
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": exc.detail, "status": "ERROR" if exc.status_code >= 500 else "CLIENT_ERROR"},
+        )
+    return JSONResponse(status_code=exc.status_code, content={"error": "Request failed", "status": "CLIENT_ERROR"})
 
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     logger.exception("unhandled_error path=%s error=%s", request.url.path, exc)
-    return JSONResponse(status_code=500, content={"error": "Internal server error"})
+    logger.error(
+        json.dumps(
+            {
+                "event": "unhandled_server_error",
+                "path": str(request.url.path),
+                "status": "ERROR",
+                "detail": str(exc)[:500],
+            },
+            ensure_ascii=False,
+        )
+    )
+    return JSONResponse(status_code=500, content={"error": "Internal server error", "status": "ERROR"})
 
 
 app.include_router(auth.router)
@@ -117,12 +162,29 @@ app.include_router(runtime_config_api.router)
 
 @app.get("/health")
 def health():
+    st = get_settings()
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        return {"ok": True}
+        return {
+            "ok": True,
+            "status": "ok",
+            "database": "connected",
+            "llm": health_llm_tier(),
+            "environment": st.environment,
+        }
     except Exception:
-        return JSONResponse(status_code=503, content={"error": "Database unavailable"})
+        return JSONResponse(
+            status_code=503,
+            content={
+                "ok": False,
+                "status": "degraded",
+                "database": "disconnected",
+                "llm": health_llm_tier(),
+                "environment": st.environment,
+                "error": "Database unavailable",
+            },
+        )
 
 
 @app.websocket("/ws/audit")

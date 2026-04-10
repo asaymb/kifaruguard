@@ -1,5 +1,5 @@
-import backend.app.core.runtime_config as runtime_config
 from backend.app.api.deps import get_current_user
+from backend.app.core.config import get_settings
 from backend.app.main import app
 from fastapi.testclient import TestClient
 
@@ -18,7 +18,8 @@ def test_get_guardrails_requires_auth():
 def test_guardrails_roundtrip(monkeypatch, tmp_path):
     cfg_file = tmp_path / "runtime.yaml"
     cfg_file.write_text("agents:\n  mine: true\n  bank: true\n", encoding="utf-8")
-    monkeypatch.setattr(runtime_config, "RUNTIME_CONFIG_PATH", str(cfg_file))
+    monkeypatch.setenv("RUNTIME_CONFIG_PATH", str(cfg_file))
+    get_settings.cache_clear()
 
     app.dependency_overrides[get_current_user] = lambda: _FakeUser()
     try:

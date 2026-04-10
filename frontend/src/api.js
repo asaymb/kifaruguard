@@ -64,6 +64,26 @@ export async function authedFetch(path, token, options = {}) {
 }
 
 /** Download compliance PDF for one agent run (GET /audit/export/{run_id}). */
+const EXPORT_COUNT_KEY = 'kifaru_compliance_export_count'
+
+export function getComplianceExportCount() {
+  try {
+    return parseInt(localStorage.getItem(EXPORT_COUNT_KEY) || '0', 10) || 0
+  } catch {
+    return 0
+  }
+}
+
+export function trackComplianceExport() {
+  try {
+    const n = getComplianceExportCount() + 1
+    localStorage.setItem(EXPORT_COUNT_KEY, String(n))
+    window.dispatchEvent(new Event('kifaru-exports-changed'))
+  } catch {
+    /* ignore */
+  }
+}
+
 export async function exportAuditReportPdf(token, runId) {
   const res = await fetch(`${API}/audit/export/${encodeURIComponent(runId)}`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -82,6 +102,15 @@ export async function exportAuditReportPdf(token, runId) {
   a.click()
   a.remove()
   URL.revokeObjectURL(url)
+  trackComplianceExport()
+}
+
+export async function verifyAuditIntegrity(token, runId) {
+  return authedFetch(`/audit/${encodeURIComponent(runId)}/verify`, token)
+}
+
+export async function replayAuditRun(token, runId) {
+  return authedFetch(`/audit/${encodeURIComponent(runId)}/replay`, token)
 }
 
 export function connectHitlSocket(token, onMessage) {

@@ -1,7 +1,7 @@
 import pytest
 
-import backend.app.core.runtime_config as runtime_config
 from backend.app.agents.guardrails import apply_guardrail
+from backend.app.core.config import get_settings
 
 
 @pytest.fixture(autouse=True)
@@ -19,7 +19,8 @@ def _isolated_guardrails_yaml(monkeypatch, tmp_path):
         "      message: ''\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(runtime_config, "RUNTIME_CONFIG_PATH", str(cfg))
+    monkeypatch.setenv("RUNTIME_CONFIG_PATH", str(cfg))
+    get_settings.cache_clear()
 
 
 def test_guardrail_blocks_blocked_status():

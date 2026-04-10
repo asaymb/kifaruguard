@@ -1,3 +1,6 @@
+# Développement local : Postgres + Ollama + API + frontend
+# Démarrage : docker compose up --build
+
 services:
   postgres:
     image: postgres:16
@@ -29,8 +32,9 @@ services:
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 15s
-      timeout: 5s
-      retries: 10
+      timeout: 10s
+      retries: 15
+      start_period: 120s
 
   backend:
     build:
@@ -43,10 +47,11 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-jwt-secret-change-for-any-real-use}
       AUDIT_HMAC_SECRET: ${AUDIT_HMAC_SECRET:-dev-only-audit-hmac-change-for-real-use}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
-      ENVIRONMENT: ${ENVIRONMENT:-development}
+      ENVIRONMENT: development
       ALLOW_ADMIN_SEED: ${ALLOW_ADMIN_SEED:-1}
       OLLAMA_URL: http://ollama:11434
       OLLAMA_MODEL: tinyllama
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       RUNTIME_CONFIG_PATH: /app/config/runtime.yaml
       AGENT_FILE_ROOT: /app/data/uploads
       AGENT_ALLOW_FILE_PATH: "1"
@@ -59,18 +64,26 @@ services:
       postgres:
         condition: service_healthy
       ollama:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import os,urllib.request; p=os.environ.get('PORT','8000'); urllib.request.urlopen('http://127.0.0.1:'+p+'/health', timeout=3)"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 20s
+      start_period: 40s
 
   frontend:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: ""
     ports:
       - "8080:8080"
     environment:
@@ -78,7 +91,8 @@ services:
       BACKEND_HOST: backend
       BACKEND_PORT: "8000"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   pgdata:

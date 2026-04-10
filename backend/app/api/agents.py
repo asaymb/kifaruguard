@@ -15,7 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from backend.app.agents.orchestrator import run_state_machine
 from backend.app.agents.pdf_reader import extract_text_from_pdf
 from backend.app.api.deps import get_current_user
-from backend.app.core.config import AUDIT_HMAC_SECRET
+from backend.app.core.config import AUDIT_HMAC_SECRET, SANCTIONS_BANK_CSV, SANCTIONS_MINES_CSV
 from backend.app.core.runtime_config import is_agent_enabled
 from backend.app.core.ws import hitl_ws_manager
 from backend.app.db.models import AuditLog, HitlQueue
@@ -40,15 +40,50 @@ def _sign(agent_type: str, step: str, input_text: str, output_text: str, status:
     return hmac.new(AUDIT_HMAC_SECRET.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
+_CHAIN_RE = re.compile(r"\|chain=([a-f0-9]{24})\b")
+
+
+def _extract_last_chain(output_text: str | None) -> str:
+    if not output_text:
+        return ""
+    m = _CHAIN_RE.search(output_text)
+    return m.group(1) if m else ""
+
+
 def _log(db: Session, agent_type: str, step: str, input_text: str, output_text: str, status: str, run_id: str):
     try:
+        safe_in = _safe_text(input_text)
+        safe_out = _safe_text(output_text)
+        sig = _sign(agent_type, step, safe_in, safe_out, status)
+        prev_chain = ""
+        try:
+            last = (
+                db.query(AuditLog)
+                .filter(AuditLog.run_id == run_id)
+                .order_by(AuditLog.id.desc())
+                .first()
+            )
+            if last and last.output_text:
+                prev_chain = _extract_last_chain(last.output_text)
+        except Exception:
+            logger.exception("audit_chain_prev_read_failed run_id=%s", run_id)
+        fp = hashlib.sha256(f"{safe_in}|{safe_out}|{status}|{step}".encode("utf-8")).hexdigest()[:24]
+        chain_payload = f"{prev_chain}|{run_id}|{step}|{fp}|{status}"
+        chain_tag = hmac.new(
+            AUDIT_HMAC_SECRET.encode("utf-8"),
+            chain_payload.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()[:24]
+        stamped = (
+            f"{safe_out} | sig={sig} | chain={chain_tag} | audit_integrity_verified=true"
+        )
         db.add(
             AuditLog(
                 agent_type=agent_type,
                 step=step,
                 timestamp=datetime.utcnow(),
-                input_text=_safe_text(input_text),
-                output_text=_safe_text(output_text) + f" | sig={_sign(agent_type, step, _safe_text(input_text), _safe_text(output_text), status)}",
+                input_text=safe_in,
+                output_text=stamped,
                 status=status,
                 run_id=run_id,
             )
@@ -174,15 +209,21 @@ async def run_agent(
         result = run_state_machine(
             agent_type,
             _safe_text(text, limit=10000),
-            "/app/data/sanctions_mines.csv",
-            "/app/data/sanctions_politiques.csv",
+            SANCTIONS_MINES_CSV,
+            SANCTIONS_BANK_CSV,
             lambda at, st, i, o, s: _log(db, at, st, i, o, s, run_id),
+            run_id=run_id,
         )
         out_status = result.get("status")
         if out_status == "REVIEW":
+            hitl_reason = (result.get("reason") or "").strip() or (
+                "Potential sanctions match — review required."
+                if agent_type == "bank"
+                else "Review required under policy."
+            )
             row = HitlQueue(
                 agent_type=agent_type,
-                reason="Bank sanctions potential match",
+                reason=hitl_reason,
                 status="pending",
                 run_id=run_id,
                 agent_result_status=str(out_status),
@@ -196,11 +237,31 @@ async def run_agent(
         logger.info("agent_run_completed run_id=%s status=%s", run_id, out_status)
         return {**result, "run_id": run_id}
     except SQLAlchemyError:
+        logger.error(
+            json.dumps(
+                {
+                    "event": "agent_run_failed",
+                    "run_id": run_id,
+                    "status": "ERROR",
+                    "reason": "database_error",
+                }
+            )
+        )
         logger.exception("agent_run_db_error")
         raise HTTPException(status_code=500, detail="Database error while running agent")
     except HTTPException:
         raise
     except Exception:
+        logger.error(
+            json.dumps(
+                {
+                    "event": "agent_run_failed",
+                    "run_id": run_id,
+                    "status": "ERROR",
+                    "reason": "unexpected_error",
+                }
+            )
+        )
         logger.exception("agent_run_unexpected_error")
         raise HTTPException(status_code=500, detail="Failed to run agent")
     finally:

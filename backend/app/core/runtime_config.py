@@ -3,7 +3,11 @@ from typing import Any
 
 import yaml
 
-RUNTIME_CONFIG_PATH = os.getenv("RUNTIME_CONFIG_PATH", "/app/config/runtime.yaml")
+from backend.app.core.config import get_settings
+
+
+def _runtime_config_path() -> str:
+    return get_settings().runtime_config_path
 
 DEFAULT_CONFIG = {
     "agents": {"mine": True, "bank": True},
@@ -42,9 +46,10 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 
 def load_runtime_config() -> dict[str, Any]:
     config = dict(DEFAULT_CONFIG)
+    path = _runtime_config_path()
     try:
-        if os.path.exists(RUNTIME_CONFIG_PATH):
-            with open(RUNTIME_CONFIG_PATH, "r", encoding="utf-8") as f:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
                 raw = yaml.safe_load(f) or {}
             if isinstance(raw, dict):
                 config = _deep_merge(config, raw)
@@ -54,8 +59,9 @@ def load_runtime_config() -> dict[str, Any]:
 
 
 def save_runtime_config(config: dict[str, Any]) -> None:
-    os.makedirs(os.path.dirname(RUNTIME_CONFIG_PATH), exist_ok=True)
-    with open(RUNTIME_CONFIG_PATH, "w", encoding="utf-8") as f:
+    path = _runtime_config_path()
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
         yaml.safe_dump(config, f, sort_keys=False)
 
 

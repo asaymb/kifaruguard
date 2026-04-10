@@ -1,3 +1,7 @@
+# Profil proche production (sans Ollama) — LLM : OpenAI ou repli sûr.
+# Usage : docker compose -f docker-compose.prod.yml up --build
+# Prérequis : JWT_SECRET_KEY, AUDIT_HMAC_SECRET, ALLOWED_ORIGINS ; OPENAI_API_KEY recommandé.
+
 services:
   postgres:
     image: postgres:16
@@ -13,18 +17,6 @@ services:
       timeout: 5s
       retries: 20
 
-  ollama:
-    image: ollama/ollama:latest
-    command: >
-      sh -c "ollama serve & sleep 5 && ollama pull tinyllama && wait"
-    volumes:
-      - ollama_data:/root/.ollama
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 15s
-      timeout: 5s
-      retries: 10
-
   backend:
     build:
       context: .
@@ -35,14 +27,13 @@ services:
       AUDIT_HMAC_SECRET: ${AUDIT_HMAC_SECRET}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       ENVIRONMENT: production
+      OLLAMA_ENABLED: "0"
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       RUNTIME_CONFIG_PATH: /app/config/runtime.yaml
       AGENT_FILE_ROOT: /app/data/uploads
       AGENT_ALLOW_FILE_PATH: "1"
     depends_on:
       postgres:
-        condition: service_healthy
-      ollama:
         condition: service_healthy
     ports:
       - "8000:8000"
@@ -51,15 +42,24 @@ services:
       - ./config:/app/config
       - ./logs:/app/logs
     healthcheck:
-      test: ["CMD", "python", "-c", "import os,urllib.request; p=os.environ.get('PORT','8000'); urllib.request.urlopen('http://127.0.0.1:'+p+'/health', timeout=3)"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 30s
 
   frontend:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: ""
     ports:
       - "8080:8080"
     environment:
@@ -67,7 +67,8 @@ services:
       BACKEND_HOST: backend
       BACKEND_PORT: "8000"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080"]
       interval: 15s
@@ -76,4 +77,3 @@ services:
 
 volumes:
   pgdata:
-  ollama_data:
