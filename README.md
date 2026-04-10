@@ -16,14 +16,16 @@ Kifaru Guard is a local-first compliance workflow:
 
 ## Environment Variables
 
-Use `.env.example` as baseline:
+Copy `.env.example` to `.env` locally (never commit `.env`):
 
 - `POSTGRES_DB`
 - `POSTGRES_USER`
 - `POSTGRES_PASSWORD`
 - `JWT_SECRET_KEY`
-- `OPENAI_API_KEY` (optional fallback)
+- `AUDIT_HMAC_SECRET` (signatures des lignes d’audit)
+- `OPENAI_API_KEY` (optionnel, repli LLM)
 - `RUNTIME_CONFIG_PATH`
+- `PORT` (backend, ex. `8000` ; Railway injecte souvent `PORT` automatiquement)
 
 ## Run (dev)
 
