@@ -1,0 +1,17 @@
+# Railway / Docker: build from **repository root** (Root directory empty in Railway).
+# Explicit COPYs avoid "No module named 'backend'" when the build context is wrong.
+FROM python:3.12-slim
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+
+COPY backend/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+COPY backend /app/backend
+COPY scripts /app/scripts
+COPY config /app/config
+COPY data /app/data
+
+CMD ["sh", "-c", "python scripts/wait_for_db.py && python scripts/seed_data.py && uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

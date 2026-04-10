@@ -13,7 +13,9 @@ Même dépôt, **4 services** distincts :
 
 | Service    | Source build | Fichier Dockerfile   | Port public typique |
 |-----------|----------------|----------------------|----------------------|
-| Backend   | GitHub         | `backend/Dockerfile` | celui fourni par Railway (`PORT`) |
+| Backend   | GitHub         | **`Dockerfile.backend`** (racine) **ou** `backend/Dockerfile` | celui fourni par Railway (`PORT`) |
+
+**Backend — important :** **Root directory = vide** (racine du repo). Si tu mets `backend/`, l’image n’a plus de dossier `backend` sous `/app` → erreur `No module named 'backend'`. Avec `Dockerfile.backend`, les `COPY` explicites évitent ce piège tant que la racine du repo est le contexte.
 | Frontend  | GitHub         | `frontend/Dockerfile`| `8080` (variable `PORT` dans l’image Nginx) |
 | Postgres  | Plugin Railway | —                    | interne              |
 | Ollama    | Image Docker   | `ollama/ollama`      | interne (`11434`)    |
